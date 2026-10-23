@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智庫管家 - Teachable Machine AI 零件辨識與智能歸位系統</title>
+  
+  <!-- 載入 TensorFlow.js 與 Teachable Machine Image 函式庫 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  
+  <!-- 引入 FontAwesome 圖示 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --bg-main: #0f172a;
+      --bg-card: #1e293b;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; padding: 20px; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 24px;
+    }
+    .header-title { display: flex; align-items: center; gap: 15px; }
+    .header-title i { font-size: 2rem; color: var(--accent); }
+    .header-title h1 { font-size: 1.5rem; }
+    .header-title span { font-size: 0.9rem; background: #0369a1; padding: 3px 8px; border-radius: 4px; }
+    .header-title p { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+
+    .btn {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 8px 16px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: var(--accent-hover); color: #fff; }
+    .btn-secondary { background: #334155; color: #fff; }
+    .btn-secondary:hover { background: #475569; }
+
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 992px) {
+      .layout-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .webcam-box {
+      position: relative;
+      width: 100%;
+      height: 340px;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .webcam-box video, .webcam-box canvas {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+    }
+    .webcam-placeholder {
+      position: absolute;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 20px;
+    }
+    .webcam-placeholder i { font-size: 3rem; margin-bottom: 10px; display: block; }
+    
+    /* 鏡頭十字對焦框 */
+    .crosshair {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      border: 2px dashed rgba(56, 189, 248, 0.6);
+      pointer-events: none;
+      border-radius: 12px;
+    }
+
+    /* 辨識即時結果與信心度條 */
+    .prediction-bars { margin-top: 15px; }
+    .pred-row { margin-bottom: 8px; }
+    .pred-info { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px; }
+    .pred-track { width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
+    .pred-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.15s ease; }
+
+    /* 歸位導航看版 */
+    .nav-box {
+      background: #0f172a;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      margin-top: 15px;
+    }
+    .part-name { font-size: 1.8rem; font-weight: bold; margin: 10px 0; color: #fff; }
+    .nav-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 15px;
+    }
+    .stat-card {
+      background: #1e293b;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+    .stat-card .label { font-size: 0.8rem; color: var(--text-muted); }
+    .stat-card .val { font-size: 1.4rem; font-weight: bold; margin-top: 4px; color: var(--accent); }
+
+    /* 抽屜矩陣 */
+    .matrix-section { margin-top: 24px; }
+    .zone-container {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 15px;
+    }
+    @media (max-width: 768px) {
+      .zone-container { grid-template-columns: 1fr; }
+    }
+    .zone-col {
+      background: #1e293b;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .zone-title { font-size: 0.95rem; font-weight: bold; margin-bottom: 12px; display: block; color: var(--text-muted); }
+    .drawers-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .drawer-node {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px 6px;
+      text-align: center;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #94a3b8;
+      transition: all 0.3s;
+    }
+    /* 抽屜高亮指引動畫 */
+    .drawer-node.active-guide {
+      background: var(--accent) !important;
+      color: #000 !important;
+      border-color: #fff !important;
+      box-shadow: 0 0 15px var(--accent);
+      animation: pulse 1s infinite alternate;
+    }
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.04); }
+    }
+
+    /* 流水帳日誌 */
+    .log-list {
+      max-height: 160px;
+      overflow-y: auto;
+      margin-top: 12px;
+      font-size: 0.85rem;
+    }
+    .log-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid #334155;
+      color: var(--text-muted);
+    }
+    .log-item span:first-child { color: var(--text-main); font-weight: 500; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-title">
+      <i class="fa-solid fa-microchip"></i>
+      <div>
+        <h1>智庫管家 <span>Teachable Machine AI</span></h1>
+        <p>東海高中 · 明星三缺一 ｜ 基於 AI 視覺之零件辨識與智能歸位系統</p>
+      </div>
+    </div>
+    <div>
+      <button class="btn" id="startBtn" onclick="initCam()"><i class="fa-solid fa-camera"></i> 開啟鏡頭檢測</button>
+      <button class="btn btn-secondary" onclick="openModelSettings()"><i class="fa-solid fa-gear"></i> 模型設定</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="layout-grid">
+      <!-- 鏡頭即時畫面 -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:0.9rem;">
+          <span id="camStatus">狀態：未開啟</span>
+          <span id="fpsCounter">推論延遲: -- ms</span>
+        </div>
+        <div class="webcam-box" id="webcam-box">
+          <div class="webcam-placeholder" id="placeholder">
+            <i class="fa-solid fa-camera-rotate"></i>
+            <p>點擊上方「開啟鏡頭檢測」載入訓練模型並即時辨識</p>
+          </div>
+          <div class="crosshair"></div>
+        </div>
+
+        <div class="prediction-bars" id="predBars">
+          <!-- 機率條由 JS 動態生成 -->
+        </div>
+      </div>
+
+      <!-- 導航防呆指引與紀錄 -->
+      <div class="card">
+        <h2 style="font-size: 1.1rem; display: flex; justify-content: space-between;">
+          <span>AI 防呆歸位導航</span>
+          <span id="guideBadge" style="font-size:0.8rem; background:#334155; padding:2px 8px; border-radius:4px;">STANDBY</span>
+        </h2>
+
+        <div class="nav-box">
+          <div style="color:var(--text-muted); font-size: 0.85rem;">辨識零件類別</div>
+          <div class="part-name" id="detectedName">等待放置零件...</div>
+          
+          <div class="nav-details">
+            <div class="stat-card">
+              <div class="label">目標抽屜格位</div>
+              <div class="val" id="targetDrawer">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI 信心度</div>
+              <div class="val" id="targetConf">--%</div>
+            </div>
+          </div>
+          <p id="partSpec" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 10px;">
+            規格：請將零件置於取景框中央以獲得最佳推論精確度
+          </p>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <span style="font-size:0.9rem; font-weight:bold;">最近歸位流水帳</span>
+          <div class="log-list" id="logList">
+            <div class="log-item"><span>系統</span><span>待命紀錄中...</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 零件抽屜座標矩陣 -->
+    <div class="card matrix-section">
+      <h3><i class="fa-solid fa-boxes-stacked"></i> 工場庫房零件抽屜座標矩陣 (A / B / C 區)</h3>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">辨識成功時，對應抽屜將高亮閃爍指引；點擊可校正目前庫存。</p>
+
+      <div class="zone-container">
+        <!-- A區 -->
+        <div class="zone-col">
+          <span class="zone-title">A 區：綠藍黑阻值 / 無極性元件</span>
+          <div class="drawers-grid">
+            <div class="drawer-node" id="drawer-A-01">A-01 (GRB)</div>
+            <div class="drawer-node" id="drawer-A-02">A-02</div>
+            <div class="drawer-node" id="drawer-A-03">A-03</div>
+            <div class="drawer-node" id="drawer-A-04">A-04</div>
+          </div>
+        </div>
+
+        <!-- B區 -->
+        <div class="zone-col">
+          <span class="zone-title">B 區：紅紅紅阻值 / 電解電容</span>
+          <div class="drawers-grid">
+            <div class="drawer-node" id="drawer-B-01">B-01</div>
+            <div class="drawer-node" id="drawer-B-02">B-02 (RRR)</div>
+            <div class="drawer-node" id="drawer-B-03">B-03</div>
+            <div class="drawer-node" id="drawer-B-04">B-04</div>
+          </div>
+        </div>
+
+        <!-- C區 -->
+        <div class="zone-col">
+          <span class="zone-title">C 區：積體電路 (IC) 與備用庫存</span>
+          <div class="drawers-grid">
+            <div class="drawer-node" id="drawer-C-01">C-01</div>
+            <div class="drawer-node" id="drawer-C-02">C-02</div>
+            <div class="drawer-node" id="drawer-C-03">C-03</div>
+            <div class="drawer-node" id="drawer-C-04">C-04</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // 預設讀取本地 my_model/ 目錄下的 model.json, metadata.json, weights.bin
+    let MODEL_URL = "./my_model/";
+    
+    // 類別標籤與工廠抽屜之規則映射邏輯
+    const PART_MAPPING = {
+      "grb": {
+        name: "電阻 (綠-藍-黑)",
+        drawer: "A-01",
+        spec: "規格：56Ω ±5% 色碼電阻",
+        color: "#22c55e"
+      },
+      "rrr": {
+        name: "電阻 (紅-紅-紅)",
+        drawer: "B-02",
+        spec: "規格：2.2kΩ ±5% 色碼電阻",
+        color: "#ef4444"
+      },
+      "empty": {
+        name: "工作台淨空 (無零件)",
+        drawer: null,
+        spec: "規格：請將欲歸位之零件置入鏡頭中心框內",
+        color: "#94a3b8"
+      }
+    };
+
+    let model, webcam, maxPredictions;
+    let isPredicting = false;
+    let lastLoggedPart = null;
+
+    // 開啟設定提示
+    function openModelSettings() {
+      const input = prompt("請輸入 Teachable Machine 模型路徑或雲端 Shareable Link：", MODEL_URL);
+      if (input) {
+        MODEL_URL = input.endsWith('/') ? input : input + '/';
+        alert(`模型路徑已更新為：${MODEL_URL}\n請重新啟動檢測鏡頭。`);
+      }
+    }
+
+    // 初始化模型與攝影機
+    async function initCam() {
+      const btn = document.getElementById("startBtn");
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 模型載入中...';
+
+      try {
+        const modelURL = MODEL_URL + "model.json";
+        const metadataURL = MODEL_URL + "metadata.json";
+
+        // 載入模型
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        // 設置攝影機 (尺寸配合模型輸入 224x224)
+        const flip = true;
+        webcam = new tmImage.Webcam(340, 340, flip);
+        await webcam.setup();
+        await webcam.play();
+        window.requestAnimationFrame(loop);
+
+        // 介面 DOM 替換
+        document.getElementById("placeholder").style.display = "none";
+        const box = document.getElementById("webcam-box");
+        box.appendChild(webcam.canvas);
+
+        // 初始化機率顯示條
+        const barContainer = document.getElementById("predBars");
+        barContainer.innerHTML = "";
+        for (let i = 0; i < maxPredictions; i++) {
+          const row = document.createElement("div");
+          row.className = "pred-row";
+          row.innerHTML = `
+            <div class="pred-info">
+              <span id="label-name-${i}">--</span>
+              <span id="label-val-${i}">0%</span>
+            </div>
+            <div class="pred-track">
+              <div class="pred-fill" id="label-bar-${i}"></div>
+            </div>
+          `;
+          barContainer.appendChild(row);
+        }
+
+        document.getElementById("camStatus").innerText = "狀態：實時運算中";
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> 檢測運作中';
+        isPredicting = true;
+      } catch (err) {
+        console.error(err);
+        alert("模型載入失敗！請確認 my_model/ 目錄下是否具備 model.json、metadata.json 與 weights.bin。");
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-camera"></i> 重試開啟';
+      }
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const startTime = performance.now();
+      const prediction = await model.predict(webcam.canvas);
+      const latency = Math.round(performance.now() - startTime);
+      document.getElementById("fpsCounter").innerText = `推論延遲: ${latency} ms`;
+
+      let highestProb = 0;
+      let dominantClass = "empty";
+
+      for (let i = 0; i < maxPredictions; i++) {
+        const className = prediction[i].className;
+        const prob = prediction[i].probability;
+        const percent = Math.round(prob * 100);
+
+        document.getElementById(`label-name-${i}`).innerText = className;
+        document.getElementById(`label-val-${i}`).innerText = `${percent}%`;
+        document.getElementById(`label-bar-${i}`).style.width = `${percent}%`;
+
+        if (prob > highestProb) {
+          highestProb = prob;
+          dominantClass = className;
+        }
+      }
+
+      // 觸發歸位指引業務邏輯 (信心度門檻設定為 80%)
+      updateNavigation(dominantClass, highestProb);
+    }
+
+    function updateNavigation(className, confidence) {
+      const partInfo = PART_MAPPING[className] || {
+        name: className,
+        drawer: "未知抽屜",
+        spec: "自訂零組件",
+        color: "#38bdf8"
+      };
+
+      const nameEl = document.getElementById("detectedName");
+      const drawerEl = document.getElementById("targetDrawer");
+      const confEl = document.getElementById("targetConf");
+      const specEl = document.getElementById("partSpec");
+      const badge = document.getElementById("guideBadge");
+
+      // 清除全部抽屜的高亮閃爍狀態
+      document.querySelectorAll(".drawer-node").forEach(node => {
+        node.classList.remove("active-guide");
+      });
+
+      // 判斷是否為無零件（空台）或信心度過低
+      if (className === "empty" || confidence < 0.75) {
+        nameEl.innerText = "等待放置零件...";
+        nameEl.style.color = "var(--text-muted)";
+        drawerEl.innerText = "--";
+        confEl.innerText = `${Math.round(confidence * 100)}%`;
+        specEl.innerText = "規格：請將零件置於取景框中央";
+        badge.innerText = "STANDBY";
+        badge.style.background = "#334155";
+        return;
+      }
+
+      // 成功辨識零件
+      nameEl.innerText = partInfo.name;
+      nameEl.style.color = partInfo.color;
+      drawerEl.innerText = partInfo.drawer || "--";
+      confEl.innerText = `${Math.round(confidence * 100)}%`;
+      specEl.innerText = partInfo.spec;
+      badge.innerText = "LOCATED";
+      badge.style.background = "#059669";
+
+      // 點亮對應抽屜矩陣
+      if (partInfo.drawer) {
+        const drawerNode = document.getElementById(`drawer-${partInfo.drawer}`);
+        if (drawerNode) {
+          drawerNode.classList.add("active-guide");
+        }
+
+        // 流水帳紀錄防抖 (同一個零件不重複連續紀錄)
+        if (lastLoggedPart !== partInfo.name && confidence > 0.85) {
+          addLog(partInfo.name, partInfo.drawer);
+          lastLoggedPart = partInfo.name;
+        }
+      }
+    }
+
+    function addLog(name, drawer) {
+      const list = document.getElementById("logList");
+      const time = new Date().toLocaleTimeString();
+      const item = document.createElement("div");
+      item.className = "log-item";
+      item.innerHTML = `<span>${name}</span> <span>歸位至 [${drawer}] · ${time}</span>`;
+      list.prepend(item);
+    }
+  </script>
+</body>
+</html>

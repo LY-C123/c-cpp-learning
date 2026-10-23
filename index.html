@@ -101,7 +101,6 @@
     }
     .webcam-placeholder i { font-size: 3rem; margin-bottom: 10px; display: block; }
     
-    /* 鏡頭十字對焦框 */
     .crosshair {
       position: absolute;
       width: 180px;
@@ -111,14 +110,12 @@
       border-radius: 12px;
     }
 
-    /* 辨識即時結果與信心度條 */
     .prediction-bars { margin-top: 15px; }
     .pred-row { margin-bottom: 8px; }
     .pred-info { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px; }
     .pred-track { width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
     .pred-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.15s ease; }
 
-    /* 歸位導航看版 */
     .nav-box {
       background: #0f172a;
       border: 2px solid var(--border-color);
@@ -143,7 +140,6 @@
     .stat-card .label { font-size: 0.8rem; color: var(--text-muted); }
     .stat-card .val { font-size: 1.4rem; font-weight: bold; margin-top: 4px; color: var(--accent); }
 
-    /* 抽屜矩陣 */
     .matrix-section { margin-top: 24px; }
     .zone-container {
       display: grid;
@@ -177,7 +173,6 @@
       color: #94a3b8;
       transition: all 0.3s;
     }
-    /* 抽屜高亮指引動畫 */
     .drawer-node.active-guide {
       background: var(--accent) !important;
       color: #000 !important;
@@ -190,7 +185,6 @@
       to { transform: scale(1.04); }
     }
 
-    /* 流水帳日誌 */
     .log-list {
       max-height: 160px;
       overflow-y: auto;
@@ -225,7 +219,7 @@
 
   <main>
     <div class="layout-grid">
-      <!-- 鏡頭即時畫面 -->
+      <!-- 鏡頭畫面 -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:0.9rem;">
           <span id="camStatus">狀態：未開啟</span>
@@ -234,17 +228,15 @@
         <div class="webcam-box" id="webcam-box">
           <div class="webcam-placeholder" id="placeholder">
             <i class="fa-solid fa-camera-rotate"></i>
-            <p>點擊上方「開啟鏡頭檢測」載入訓練模型並即時辨識</p>
+            <p>點擊上方「開啟鏡頭檢測」載入雲端模型並進行即時辨識</p>
           </div>
           <div class="crosshair"></div>
         </div>
 
-        <div class="prediction-bars" id="predBars">
-          <!-- 機率條由 JS 動態生成 -->
-        </div>
+        <div class="prediction-bars" id="predBars"></div>
       </div>
 
-      <!-- 導航防呆指引與紀錄 -->
+      <!-- 歸位導航與資訊 -->
       <div class="card">
         <h2 style="font-size: 1.1rem; display: flex; justify-content: space-between;">
           <span>AI 防呆歸位導航</span>
@@ -279,7 +271,7 @@
       </div>
     </div>
 
-    <!-- 零件抽屜座標矩陣 -->
+    <!-- 零件抽屜座標矩陣 (A / B / C 區) -->
     <div class="card matrix-section">
       <h3><i class="fa-solid fa-boxes-stacked"></i> 工場庫房零件抽屜座標矩陣 (A / B / C 區)</h3>
       <p style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">辨識成功時，對應抽屜將高亮閃爍指引；點擊可校正目前庫存。</p>
@@ -322,9 +314,9 @@
   </main>
 
   <script>
-    // 預設讀取本地 my_model/ 目錄下的 model.json, metadata.json, weights.bin
-    let MODEL_URL = "./my_model/";
-    
+    // 直接綁定您的 Teachable Machine 雲端模型連結
+    let MODEL_URL = "https://teachablemachine.withgoogle.com/models/6LGF_0plL/";
+
     // 類別標籤與工廠抽屜之規則映射邏輯
     const PART_MAPPING = {
       "grb": {
@@ -351,37 +343,34 @@
     let isPredicting = false;
     let lastLoggedPart = null;
 
-    // 開啟設定提示
     function openModelSettings() {
-      const input = prompt("請輸入 Teachable Machine 模型路徑或雲端 Shareable Link：", MODEL_URL);
+      const input = prompt("目前使用的模型 URL：", MODEL_URL);
       if (input) {
         MODEL_URL = input.endsWith('/') ? input : input + '/';
-        alert(`模型路徑已更新為：${MODEL_URL}\n請重新啟動檢測鏡頭。`);
+        alert(`模型連結已更新為：${MODEL_URL}\n請重新點擊開啟鏡頭。`);
       }
     }
 
-    // 初始化模型與攝影機
     async function initCam() {
       const btn = document.getElementById("startBtn");
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 模型載入中...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 載入雲端模型中...';
 
       try {
         const modelURL = MODEL_URL + "model.json";
         const metadataURL = MODEL_URL + "metadata.json";
 
-        // 載入模型
+        // 從 Google 雲端載入模型
         model = await tmImage.load(modelURL, metadataURL);
         maxPredictions = model.getTotalClasses();
 
-        // 設置攝影機 (尺寸配合模型輸入 224x224)
+        // 設置相機畫面 (224x224 支援)
         const flip = true;
         webcam = new tmImage.Webcam(340, 340, flip);
         await webcam.setup();
         await webcam.play();
         window.requestAnimationFrame(loop);
 
-        // 介面 DOM 替換
         document.getElementById("placeholder").style.display = "none";
         const box = document.getElementById("webcam-box");
         box.appendChild(webcam.canvas);
@@ -409,7 +398,7 @@
         isPredicting = true;
       } catch (err) {
         console.error(err);
-        alert("模型載入失敗！請確認 my_model/ 目錄下是否具備 model.json、metadata.json 與 weights.bin。");
+        alert("模型載入失敗！請確認網路是否正常，或檢查模型分享連結。");
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-camera"></i> 重試開啟';
       }
@@ -445,7 +434,6 @@
         }
       }
 
-      // 觸發歸位指引業務邏輯 (信心度門檻設定為 80%)
       updateNavigation(dominantClass, highestProb);
     }
 
@@ -463,12 +451,11 @@
       const specEl = document.getElementById("partSpec");
       const badge = document.getElementById("guideBadge");
 
-      // 清除全部抽屜的高亮閃爍狀態
       document.querySelectorAll(".drawer-node").forEach(node => {
         node.classList.remove("active-guide");
       });
 
-      // 判斷是否為無零件（空台）或信心度過低
+      // 淨空或信心度不足
       if (className === "empty" || confidence < 0.75) {
         nameEl.innerText = "等待放置零件...";
         nameEl.style.color = "var(--text-muted)";
@@ -480,7 +467,7 @@
         return;
       }
 
-      // 成功辨識零件
+      // 辨識成功
       nameEl.innerText = partInfo.name;
       nameEl.style.color = partInfo.color;
       drawerEl.innerText = partInfo.drawer || "--";
@@ -489,14 +476,14 @@
       badge.innerText = "LOCATED";
       badge.style.background = "#059669";
 
-      // 點亮對應抽屜矩陣
+      // 高亮閃爍抽屜
       if (partInfo.drawer) {
         const drawerNode = document.getElementById(`drawer-${partInfo.drawer}`);
         if (drawerNode) {
           drawerNode.classList.add("active-guide");
         }
 
-        // 流水帳紀錄防抖 (同一個零件不重複連續紀錄)
+        // 防抖流水帳紀錄
         if (lastLoggedPart !== partInfo.name && confidence > 0.85) {
           addLog(partInfo.name, partInfo.drawer);
           lastLoggedPart = partInfo.name;

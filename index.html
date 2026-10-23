@@ -355,7 +355,7 @@
     let lastLoggedPart = null;
 
     // === 取樣與防抖冷卻參數 ===
-    const SAMPLE_COUNT = 15;        // 每組取樣幀數 (10~20 幀)
+    const SAMPLE_COUNT = 5;        // 每組取樣幀數 (10~20 幀)
     const COOLDOWN_MS = 800;        // 每組輸出後的鎖定冷卻時間 (毫秒，約 0.8 秒)
     let sampleBuffer = [];          // 暫存每幀各類別機率
     let cooldownUntil = 0;          // 冷卻結束時間戳
